@@ -1,0 +1,34 @@
+Sub InsertPicturesFromNames()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("customemoji")  ' 対象シート名に合わせて変更
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, "D").End(xlUp).Row  ' D列最終行
+
+    Dim folderPath As String
+    folderPath = ThisWorkbook.Path & "\"            ' このブックと同フォルダ
+
+    Dim i As Long
+    For i = 2 To lastRow    ' ヘッダー行はのぞく
+        Dim fileName As String
+        fileName = ws.Cells(i, "D").Value
+        If fileName <> "" Then
+            Dim picPath As String
+            picPath = folderPath & fileName
+            If Dir(picPath) <> "" Then
+                Dim pic As Picture
+                Set pic = ws.Pictures.Insert(picPath)
+                With pic
+                    ' 画像をH列セルのサイズ・位置に合わせる
+                    .Left = ws.Cells(i, "H").Left
+                    .Top = ws.Cells(i, "H").Top
+                    .Width = ws.Cells(i, "H").Width
+                    .Height = ws.Cells(i, "H").Height
+                    .Placement = xlMoveAndSize
+                End With
+            Else
+                ws.Cells(i, "H").Value = "ファイル未検出"
+            End If
+        End If
+    Next i
+End Sub

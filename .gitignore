@@ -1,7 +1,6 @@
 # 認証情報や一時ファイルを除外
 .env
 emoji_images/
-*.png
 *.csv
 *.json
 __pycache__/

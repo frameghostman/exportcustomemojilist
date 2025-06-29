@@ -19,11 +19,11 @@ Sub InsertPicturesFromNames()
                 Dim pic As Picture
                 Set pic = ws.Pictures.Insert(picPath)
                 With pic
-                    ' 画像をH列セルのサイズ・位置に合わせる
-                    .Left = ws.Cells(i, "H").Left
-                    .Top = ws.Cells(i, "H").Top
-                    .Width = ws.Cells(i, "H").Width
-                    .Height = ws.Cells(i, "H").Height
+                    ' 画像をK列セルのサイズ・位置に合わせる
+                    .Left = ws.Cells(i, "K").Left
+                    .Top = ws.Cells(i, "K").Top
+                    .Width = ws.Cells(i, "K").Width
+                    .Height = ws.Cells(i, "K").Height
                     .Placement = xlMoveAndSize
                 End With
             Else

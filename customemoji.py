@@ -4,30 +4,10 @@ import csv
 import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import msal  # MSAL for auth
 
 # 環境変数から認証情報を取得
-CLIENT_ID     = os.environ['CLIENT_ID']
-CLIENT_SECRET = os.environ['CLIENT_SECRET']
-TENANT_ID     = os.environ['TENANT_ID']
-ACCESS_TOKEN  = os.environ.get("TEAMS_ACCESS_TOKEN", "")
-COOKIE_TOKEN  = os.environ.get("TEAMS_COOKIE_TOKEN", "")
-
-# --- MSAL (Client Credentials Flow) 設定 ---
-AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
-SCOPES    = ["https://graph.microsoft.com/.default"]
-app = msal.ConfidentialClientApplication(
-    client_id=CLIENT_ID,
-    authority=AUTHORITY,
-    client_credential=CLIENT_SECRET
-)
-
-def acquire_graph_token() -> str:
-    """MSAL でアクセストークンを取得"""
-    result = app.acquire_token_for_client(scopes=SCOPES)  # :contentReference[oaicite:6]{index=6}
-    if "access_token" not in result:
-        raise RuntimeError(f"Token Error: {result.get('error')} {result.get('error_description')}")
-    return result["access_token"]
+ACCESS_TOKEN = os.environ.get("TEAMS_ACCESS_TOKEN", "")
+COOKIE_TOKEN = os.environ.get("TEAMS_COOKIE_TOKEN", "")
 
 def get_customemoji(access_token: str):
     """
@@ -56,77 +36,82 @@ def download_png(url: str, output_path: str, cookie_token: str):
         for chunk in resp.iter_content(8192):
             f.write(chunk)
 
-def get_user_info(graph_token: str, user_id: str) -> tuple[str, str]:
+def get_user_info(access_token: str, user_id: str) -> tuple[str, str]:
     """
-    UUID (Object ID) から displayName と userPrincipalName を取得
+    creator から displayName と userPrincipalName を取得
+    存在しない user_id や認証エラー時には空文字を返却
     """
-    url = f"https://graph.microsoft.com/v1.0/users/{user_id}"
-    params = {"$select": "displayName,userPrincipalName"}
-    headers = {"Authorization": f"Bearer {graph_token}"}
-    r = requests.get(url, headers=headers, params=params)
-    r.raise_for_status()
-    j = r.json()
-    return j.get("displayName", ""), j.get("userPrincipalName", "")  # :contentReference[oaicite:7]{index=7}
+    url = f"https://teams.microsoft.com/api/mt/apac/beta/users/{user_id}/"
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "Authorization": f"Bearer {access_token}",
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to fetch user info for {user_id}: {e}")
+        return "", ""
+
+    data = response.json()
+    user_info = data.get('value', {})
+    return user_info.get('displayName', ''), user_info.get('userPrincipalName', '')
 
 def main():
     # JSON 取得
     data = get_customemoji(ACCESS_TOKEN)
     emoticons = data.get('categories', [])[0].get('emoticons', [])
-    graph_token = acquire_graph_token()
+
+    # 事前に全creator UUIDをユニークに抽出
+    creator_ids = set()
+    for e in emoticons:
+        raw = e.get('creator', '')
+        if raw and ':' in raw:
+            creator_ids.add(raw.split(':')[-1])
+
+    # 全ユーザー情報を事前取得してキャッシュ
+    user_cache: dict[str, tuple[str, str]] = {}
+    for uid in creator_ids:
+        display, upn = get_user_info(ACCESS_TOKEN, uid)
+        user_cache[uid] = (display, upn)
 
     # CSV 用リスト
     rows = []
-
     for e in emoticons:
-        doc_id = e.get('documentId')
-
-        # PNG URL 作成
-        png_url = f"https://jp-prod.asyncgw.teams.microsoft.com/v1/objects/{doc_id}/views/imgt2_anim?v=1"
+        doc_id = e.get('documentId', '')
         file_name = f"{doc_id}.png"
 
         # ダウンロード
+        png_url = f"https://jp-prod.asyncgw.teams.microsoft.com/v1/objects/{doc_id}/views/imgt2_anim?v=1"
         download_png(png_url, file_name, COOKIE_TOKEN)
 
-        # JSON レコードにファイル名を追加
-        e['fileName'] = file_name
-
-        # createdOn をミリ秒から datetime に変換 (日本時間)
+        # 作成日時変換
         ts_ms = e.get('createdOn')
         if isinstance(ts_ms, (int, float)):
-            dt_jst = datetime.fromtimestamp(ts_ms / 1000, tz=ZoneInfo('Asia/Tokyo'))
-            created_on_str = dt_jst.strftime('%Y-%m-%d %H:%M:%S %Z')
+            dt = datetime.fromtimestamp(ts_ms / 1000, tz=ZoneInfo('Asia/Tokyo'))
+            created_on = dt.strftime('%Y-%m-%d %H:%M:%S %Z')
         else:
-            created_on_str = ''
+            created_on = ''
 
-        # creator フィールドからプレフィックスを除去して UUID 部分を抽出
+        # creator UUID
         raw_creator = e.get('creator', '')
+        creator_id = raw_creator.split(':')[-1] if raw_creator and ':' in raw_creator else ''
+        disp_name, upn = user_cache.get(creator_id, ('', ''))
 
-        # 形式例: "8:orgid:0aeaa542-8797-4216-b4cb-e1bb6e72482c"
-        if raw_creator and ':' in raw_creator:
-            creator_id = raw_creator.split(':')[-1]
-        else:
-            creator_id = ""
-
-        # UUID 部分が取得できたら Graph API から displayName/UPN を取得
-        if creator_id:
-            disp_name, upn = get_user_info(graph_token, creator_id)
-        else:
-            disp_name, upn = "", ""
-
-        # CSV 行作成
         rows.append({
-            'id'                  : e.get('id', ''),
-            'documentId'          : doc_id,
-            'description'         : e.get('description', ''),
-            'fileName'            : file_name,
-            'creatorRaw'          : raw_creator,
-            'creator'             : creator_id,
-            'creatorDisplayName'  : disp_name,
-            'creatorUPN'          : upn,
-            'createdOn'           : created_on_str,
-            'isDeleted'           : e.get('isDeleted', '')
+            'id': e.get('id', ''),
+            'documentId': doc_id,
+            'description': e.get('description', ''),
+            'fileName': file_name,
+            'creatorRaw': raw_creator,
+            'creator': creator_id,
+            'creatorDisplayName': disp_name,
+            'creatorUPN': upn,
+            'createdOn': created_on,
+            'isDeleted': e.get('isDeleted', False)
         })
 
+    # CSV出力
     fieldnames = [
         'id','documentId','description','fileName',
         'creatorRaw','creator','creatorDisplayName','creatorUPN',
@@ -137,11 +122,11 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
-    with open('customemoji_with_files.json','w',encoding='utf-8') as jf:
+    # JSON 保存
+    with open('customemoji_with_files.json', 'w', encoding='utf-8') as jf:
         json.dump(data, jf, ensure_ascii=False, indent=2)
 
     print("Downloaded images and exported CSV: customemoji.csv")
-
 
 if __name__ == '__main__':
     main()

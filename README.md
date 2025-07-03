@@ -1,11 +1,11 @@
-# カスタム絵文字リストエクスポート
+# Extracting Custom Emoji From Teams!
+
+This script is for downloading a custom emoji list from Microsoft Teams. <br> 
 
 このスクリプトは、Microsoft Teamsからカスタム絵文字リストをダウンロードするためのものです。<br>
-MSALを利用しcreatorに含まれるuuidからdisplayname,UPN表示まで行っています。<br>
-これにともないMSALモジュールのインストールやクライアントID(最低限 User.ReadBasic.All )が必要です。<br>
-本コードではアプリケーションIDを「アプリケーションの許可」で作成する想定で書いています。<br>
+creatorに含まれるuuidからdisplayname,UPN表示まで行っています。<br>
 
-## 使用方法
+## How to use:使用方法
 
 1. Webブラウザ版Teamsを起動し適当なカスタム絵文字を追加すると https://teams.microsoft.com/api/csa/apac/api/v1/customemoji/metadata にアクセスしているのでその時のトークン(のちにTEAMS_ACCESS_TOKENにセット)を得ます。デベロッパーツール等で確認できる authorization フィールドのbearer以下の部分になります。以下の画像部分です。
 
@@ -37,6 +37,6 @@ MSALを利用しcreatorに含まれるuuidからdisplayname,UPN表示まで行�
 
 6. 必要に応じて、customemoji.csv を Excel で開いたのち付属のVBAを実行すると画像一覧も読み込めます。
 
-## 免責事項
+## Disclaimer:免責事項
 
 このスクリプトは、個人的な使用のためのものです。
